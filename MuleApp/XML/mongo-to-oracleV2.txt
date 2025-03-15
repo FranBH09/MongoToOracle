@@ -1,0 +1,452 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:mongo="http://www.mulesoft.org/schema/mule/mongo" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/mongo http://www.mulesoft.org/schema/mule/mongo/current/mule-mongo.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+	<db:config name="Oracle_Database_Config" doc:name="Database Config" doc:id="64f7a0cf-913f-4d12-bfd8-d41e8654d7d4" >
+		<db:oracle-connection host="52.1.183.63" port="1550" user="system" password="oracle25" serviceName="erpcop" />
+	</db:config>
+	<http:listener-config name="_HTTP_Listener_config_1" doc:name="HTTP Listener config" doc:id="e3afe4a3-ea96-46c1-b4f3-7751dea83ca1" basePath="webhook" >
+		<http:listener-connection host="0.0.0.0" port="8010" readTimeout="3000"/>
+	</http:listener-config>
+	<flow name="mongo-to-oracle" doc:id="d8e067b3-f2a0-45d5-9edd-8733ab7fb45a" >
+		<http:listener doc:name="Listener" doc:id="d980896b-2c9a-41c1-912b-cedc64b405f0" config-ref="_HTTP_Listener_config_1" path="transaction" allowedMethods="POST"/>
+		<logger level="INFO" doc:name="Logger" doc:id="e01d0048-a1bc-495a-8580-eff09c13d2d4" message='#["[flow_Oracle] Iniciando flujo MongoDB a Oracle"]'/>
+		<logger level="INFO" doc:name="Logger" doc:id="9e89362c-f789-45a2-a7c5-9a6390a3156f" message='#["[flow_Oracle] Datos obtenidos del documento: " ++ payload.operationType]'/>
+		<choice doc:name="Choice" doc:id="e566e1de-c1da-4008-b5c0-e56c9080888a">
+			<when expression='#[payload.operationType == "insert"]'>
+				<logger level="INFO" doc:name="VALIDACION DE INSERT" doc:id="69f3260b-903e-4eb2-b149-1ce18c2c741f" message='#["[flow_Oracle] Iniciando flujo si INSERT"]'/>
+				<ee:transform doc:name="Extraer Datos para Oracle" doc:id="f07bb926-1772-4e4b-a123-9b4520bda830">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="datos"><![CDATA[%dw 2.0
+output application/json
+var ticket = payload.fullDocument.data.tickets[0]
+var ratios = ticket.ratios 
+---
+{
+  value               : (ticket.productExpirationDate.value as DateTime) as String {format: "yyyy-MM-dd HH:mm:ss"},
+  accountId           : ticket.accountId as String,
+  travelDate          : (ticket.travelDate.value as DateTime) as String {format: "yyyy-MM-dd HH:mm:ss"},
+  originalTicketNumber: ticket.originalTicketNumber as String,
+  displayTotal        : ticket.displayTotal as Number,
+  journeyToId         : ticket.journeyToId as String,
+  departureDatetime   : (ticket.departureDatetime.value as DateTime) as String {format: "yyyy-MM-dd HH:mm:ss"},
+  journeyFromId       : ticket.journeyFromId as String,
+  createdBy           : ticket.createdBy as String,
+  status              : ticket.status as String,
+  redemptionValue     : ticket.redemptionValue as Number,
+  departureTimestamp  : (ticket.departureTimestamp as DateTime) as String {format: "yyyy-MM-dd HH:mm:ss"},
+  routeId             : ticket.routeId as String,
+  total1              : ratios[0].total as Number,
+  type1               : ratios[0].type1 as String,
+  total2              : ratios[1].total as Number,
+  type1               : ratios[1].type2 as String,
+  total3              : ratios[2].total as Number,
+  type3               : ratios[2].type3 as String,
+  toId                : ticket.toId as String,
+  ticketNumber        : ticket.ticketNumber as String,
+  idMongo             : ticket.idMongo  as String,
+  travelDistance      : if (ticket.travelDistance != null) ticket.travelDistance as Number else null,
+  seat                : ticket.seat as String,
+  updatedAt           : (ticket.updatedAt.value as DateTime) as String {format: "yyyy-MM-dd HH:mm:ss"},
+  lastName            : ticket.lastName as String,
+  firstName           : ticket.firstName as String,
+  userId			  : ticket.userId as String,
+  
+  price               : ticket.price as Number,
+  fareId              : ticket.fareId as String,
+  amenityGroupId      : if (ticket.amenityGroupId != null) ticket.amenityGroupId as String else null,
+  stationId           : ticket.stationId as String,
+  transactionId       : ticket.transactionId as String,
+  taxes               : ticket.taxes as Number,
+  date                : (ticket.date as Date) as String {format: "yyyy-MM-dd"},
+  brandId             : if (ticket.brandId != null) ticket.brandId as String else null,
+  fromId              : ticket.fromId as String
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+				<logger level="INFO" doc:name="Logger" doc:id="0f0a42f9-70e4-4157-a8d2-b140f70ef661" message='#["[flow_Oracle] Datos obtenidos de la colección Transactions"]' />
+				<db:select doc:name="Recuperar IDs de ERPCO" doc:id="4399c00f-776a-45f3-a3cd-ef8d8e8e9507" config-ref="Oracle_Database_Config" target="id_erpco">
+			<db:sql><![CDATA[SELECT 
+    (SELECT rutaid_erpco FROM intr.ruta WHERE routeid_bttz=:routeid),
+    (SELECT terminalid_erpco FROM intr.terminales WHERE stationid_bttz=:origenid),
+    (SELECT terminalid_erpco FROM intr.terminales WHERE stationid_bttz=:destinoid),
+    (SELECT usuarioid_erpco FROM intr.usuario WHERE accountid_bttz=:accountid)
+FROM DUAL]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+	destinoid: vars.datos.toId,
+	origenid: vars.datos.fromId,
+	accountid: vars.datos.accountId,
+	routeid: vars.datos.routeId
+}]]]></db:input-parameters>
+		</db:select>
+				<logger level="INFO" doc:name="Logger" doc:id="6a7d6383-654d-4305-b9ba-50e17108e97c" message='#["[flow_Oracle] IDs equivalentes ERPCO obtenidos de las tablas INTR.ruta, INTR.terminales y INTR.usuario"]' />
+				<ee:transform doc:name="Limpiar IDs" doc:id="21b512b2-2faf-4c03-88ad-2d67760248c3">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="new_id"><![CDATA[%dw 2.0
+output application/json
+---
+{
+	ruta_id: if (vars.id_erpco[0]? != null) vars.id_erpco[0]."(SELECTRUTAID_ERPCOFROMINTR.RUTAWHEREROUTEID_BTTZ=:1)" else -1,
+	origen_id: if (vars.id_erpco[1]? != null) vars.id_erpco[0]."(SELECTTERMINALID_ERPCOFROMINTR.TERMINALESWHERESTATIONID_BTTZ=:2)" else -1,
+	destino_id: if (vars.id_erpco[2]? != null) vars.id_erpco[0]."(SELECTTERMINALID_ERPCOFROMINTR.TERMINALESWHERESTATIONID_BTTZ=:3)" else -1,
+	usuario_id: if (vars.id_erpco[3]? != null) vars.id_erpco[0]."(SELECTUSUARIOID_ERPCOFROMINTR.USUARIOWHEREACCOUNTID_BTTZ=:4)" else -1
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+				<logger level="INFO" doc:name="Logger" doc:id="9f9619c5-ec3e-4e50-82ab-e437bfb0ab80" message='#["[flow_Oracle] Datos transformados correctamente"]' />
+				<ee:transform doc:name="Transformar Datos para Oracle" doc:id="2bd3ef83-0abb-4abf-bb14-f87c6cdcb761">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="datos_erpco"><![CDATA[%dw 2.0
+output application/json
+var numeoperacion = 1224 as Number
+var folio = random() * 100000000
+var asiento = random() * 100
+var num = random() * 100
+var num3 = random() * 100
+var num1 = random() * 10
+var num2 = random() * 10
+
+var fechorviaje = vars.datos.departureDatetime
+var fechorviaje1 =vars.datos.departureTimestamp
+
+var precio = vars.datos.displayTotal as Number
+var usuarioreg_id = vars.datos.createdBy[0 to 1]
+var statusboleto = vars.datos.status[0]
+var totaldevolver1 = vars.datos.redemptionValue 
+var valorformapago1 = vars.datos.total1 / 1000
+var formapago1_id = 1 as Number
+
+var valorformapago2 = vars.datos.total2 / 1000
+var formapago2_id = 2 as Number
+
+var valorformapago3 = vars.datos.total3 / 1000
+var formapago3_id = 3 as Number
+
+var numefolio1 = vars.datos.idMongo
+var kmdistance = vars.datos.travelDistance 
+var numeasiento = vars.datos.seat as String
+var nombPasajero = vars.datos.firstName as String
+var apePasajero = vars.datos.lastName as String
+var puntoventa = vars.datos.stationId[0 to 1] 
+---
+{
+	USUARIO_ID: vars.new_id.usuario_id, 
+	RUTA_ID: vars.new_id.ruta_id, 
+	ORIGEN_ID: vars.new_id.origen_id, 
+	DESTINO_ID: vars.new_id.destino_id,
+	
+	FECCORTE: vars.datos.value,
+	FECCORRIDA: vars.datos.travelDate,
+	FECHORVIAJE: fechorviaje,
+	FECHORVIAJE1: fechorviaje1,
+	FECHORVTA: vars.datos.updatedAt,
+	
+	NUMEFOLIO: round(folio) as String,
+	PRECIO: precio,
+	USUARIOREG_ID: usuarioreg_id as Number,
+	STATUSBOLETO: statusboleto,
+	TOTALDEVOLVER1: totaldevolver1,
+	VALORFORMAPAGO1: valorformapago1,
+	FORMPAGO1_ID: formapago1_id,
+	VALORFORMAPAGO2: valorformapago2,
+	FORMPAGO2_ID: formapago2_id,
+	VALORFORMAPAGO3: valorformapago3,
+	FORMPAGO3_ID: formapago3_id,
+	NUMEFOLIO1: vars.datos.ticketNumber,
+	KMDISTANCE: kmdistance,
+	NUMEASIENTO: round(asiento) as String,
+	NOMBPASAJERO: nombPasajero ++ " " ++ apePasajero,
+	TIPOBOLETO_ID: num2,
+	CLASESERVICIO_ID: num1,
+	PUNTOVENTA_ID: num as Number,
+	PUNTOVENTAREG_ID: num as Number,
+	NUMEOPERACION: numeoperacion,
+	VALORIVA: vars.datos.taxes,
+	MARCA_ID: num3,
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+				<logger level="INFO" doc:name="Logger" doc:id="d1343877-6758-4b75-bce1-9bfae4484b66" message='#["[flow_Oracle] Datos listos para insertar"]' />
+				<db:insert doc:name="Insertar BOLVEN" doc:id="5e329d63-d12b-4edb-ae01-573c7bc12081" config-ref="Oracle_Database_Config">
+			<db:sql><![CDATA[INSERT INTO VENTA.BOLVEN (
+BOLVEN_ID, USUARIO_ID, RUTA_ID, ORIGEN_ID, DESTINO_ID,
+FECCORTE, FECCORRIDA,  FECHORVIAJE, FECHORVTA, 
+NUMEFOLIO, PRECIO, USUARIOREG_ID, STATUSBOLETO, TOTALDEVOLVER1,
+VALORFORMAPAGO1, FORMAPAGO1_ID, VALORFORMAPAGO2, FORMAPAGO2_ID, VALORFORMAPAGO3,
+KMVIAJE, NUMEASIENTO, NOMBPASAJERO, TIPOBOLETO_ID, CLASESERVICIO_ID, 
+PUNTOVENTA_ID, PUNTOVENTAREG_ID, NUMEOPERACION, VALORIVA, MARCA_ID
+)
+VALUES (
+VENTA.BOLVEN_SEQ2.NEXTVAL, :USUARIO_ID, :RUTA_ID, :ORIGEN_ID, :DESTINO_ID,
+:FECCORTE, :FECCORRIDA,  :FECHORVIAJE, :FECHORVTA, 
+:NUMEFOLIO, :PRECIO, :USUARIOREG_ID, :STATUSBOLETO, :TOTALDEVOLVER1,
+:VALORFORMAPAGO1, :FORMAPAGO1_ID, :VALORFORMAPAGO2, :FORMAPAGO2_ID, :VALORFORMAPAGO3,
+:KMVIAJE, :NUMEASIENTO, :NOMBPASAJERO, :TIPOBOLETO_ID, :CLASESERVICIO_ID, 
+:PUNTOVENTA_ID, :PUNTOVENTAREG_ID, :NUMEOPERACION, :VALORIVA, :MARCA_ID
+)]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+USUARIO_ID: vars.datos_erpco.USUARIO_ID,
+RUTA_ID: vars.datos_erpco.RUTA_ID, 
+ORIGEN_ID: vars.datos_erpco.ORIGEN_ID, 
+DESTINO_ID:vars.datos_erpco.DESTINO_ID,
+
+FECCORTE: vars.datos_erpco.FECCORTE,
+FECCORRIDA: vars.datos_erpco.FECCORRIDA,
+FECHORVIAJE: vars.datos_erpco.FECHORVIAJE, 
+FECHORVTA: vars.datos_erpco.FECHORVTA,	
+
+NUMEFOLIO: vars.datos_erpco.NUMEFOLIO, 
+PRECIO: vars.datos_erpco.PRECIO, 
+USUARIOREG_ID: vars.datos_erpco.USUARIOREG_ID, 
+STATUSBOLETO: vars.datos_erpco.STATUSBOLETO, 
+TOTALDEVOLVER1: vars.datos_erpco.TOTALDEVOLVER1,
+VALORFORMAPAGO1: vars.datos_erpco.VALORFORMAPAGO1, 
+FORMAPAGO1_ID: vars.datos_erpco.FORMPAGO1_ID,
+VALORFORMAPAGO2: vars.datos_erpco.VALORFORMAPAGO2, 
+FORMAPAGO2_ID: vars.datos_erpco.FORMPAGO2_ID, 
+VALORFORMAPAGO3: vars.datos_erpco.VALORFORMAPAGO3, 
+KMVIAJE: vars.datos_erpco.KMDISTANCE, 
+NUMEASIENTO: vars.datos_erpco.NUMEASIENTO,  
+NOMBPASAJERO: vars.datos_erpco.NOMBPASAJERO, 
+TIPOBOLETO_ID: vars.datos_erpco.TIPOBOLETO_ID, 
+CLASESERVICIO_ID: vars.datos_erpco.CLASESERVICIO_ID, 
+PUNTOVENTA_ID: vars.datos_erpco.PUNTOVENTA_ID, 
+PUNTOVENTAREG_ID: vars.datos_erpco.PUNTOVENTAREG_ID, 
+NUMEOPERACION: vars.datos_erpco.NUMEOPERACION, 
+VALORIVA: vars.datos_erpco.VALORIVA, 
+MARCA_ID: vars.datos_erpco.MARCA_ID
+}]]]></db:input-parameters>
+		</db:insert>
+				<logger level="INFO" doc:name="Logger" doc:id="dd280461-29d7-4047-8129-60b940b48417" message='#["[flow_Oracle] Insercción exitosa a VENTA.BOLVEN, registro insertado con USUARIO_ID: " ++ vars.datos_erpco.USUARIO_ID]' />
+			</when>
+			<when expression='#[payload.operationType == "update"]'>
+				<logger level="INFO" doc:name="VALIDACION DE UPDATE" doc:id="8e8f83a7-bfbf-4f46-9192-8017e85e5c4b" message='#["[flow_Oracle] Iniciando flujo si UPDATE"]'/>
+				<ee:transform doc:name="Extraer Datos para Oracle" doc:id="1d48a874-4ee9-434e-a715-fd3ffb6851e8">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="datos"><![CDATA[%dw 2.0
+output application/json
+var ticket = payload.fullDocument.data.tickets[0]
+var ratios = ticket.ratios 
+---
+{
+  value               : (ticket.productExpirationDate.value as DateTime) as String {format: "yyyy-MM-dd HH:mm:ss"},
+  accountId           : ticket.accountId as String,
+  travelDate          : (ticket.travelDate.value as DateTime) as String {format: "yyyy-MM-dd HH:mm:ss"},
+  originalTicketNumber: ticket.originalTicketNumber as String,
+  displayTotal        : ticket.displayTotal as Number,
+  journeyToId         : ticket.journeyToId as String,
+  departureDatetime   : (ticket.departureDatetime.value as DateTime) as String {format: "yyyy-MM-dd HH:mm:ss"},
+  journeyFromId       : ticket.journeyFromId as String,
+  createdBy           : ticket.createdBy as String,
+  status              : ticket.status as String,
+  redemptionValue     : ticket.redemptionValue as Number,
+  departureTimestamp  : (ticket.departureTimestamp as DateTime) as String {format: "yyyy-MM-dd HH:mm:ss"},
+  routeId             : ticket.routeId as String,
+  total1              : ratios[0].total as Number,
+  type1               : ratios[0].type1 as String,
+  total2              : ratios[1].total as Number,
+  type1               : ratios[1].type2 as String,
+  total3              : ratios[2].total as Number,
+  type3               : ratios[2].type3 as String,
+  toId                : ticket.toId as String,
+  ticketNumber        : ticket.ticketNumber as String,
+  idMongo             : ticket.idMongo  as String,
+  travelDistance      : if (ticket.travelDistance != null) ticket.travelDistance as Number else null,
+  seat                : ticket.seat as String,
+  updatedAt           : (ticket.updatedAt.value as DateTime) as String {format: "yyyy-MM-dd HH:mm:ss"},
+  lastName            : ticket.lastName as String,
+  firstName           : ticket.firstName as String,
+  userId			  : ticket.userId as String,
+  
+  price               : ticket.price as Number,
+  fareId              : ticket.fareId as String,
+  amenityGroupId      : if (ticket.amenityGroupId != null) ticket.amenityGroupId as String else null,
+  stationId           : ticket.stationId as String,
+  transactionId       : ticket.transactionId as String,
+  taxes               : ticket.taxes as Number,
+  date                : (ticket.date as Date) as String {format: "yyyy-MM-dd"},
+  brandId             : if (ticket.brandId != null) ticket.brandId as String else null,
+  fromId              : ticket.fromId as String
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+				<logger level="INFO" doc:name="Logger" doc:id="d27e68da-ba23-44b9-b450-42d928a282a9" message='#["[flow_Oracle] Datos obtenidos de la colección Transactions "]' />
+				<db:select doc:name="Recuperar IDs de ERPCO" doc:id="9b5b4a98-6d7c-4bc7-9d48-e058e10c5b76" config-ref="Oracle_Database_Config" target="id_erpco">
+			<db:sql><![CDATA[SELECT 
+    (SELECT rutaid_erpco FROM intr.ruta WHERE routeid_bttz=:routeid),
+    (SELECT terminalid_erpco FROM intr.terminales WHERE stationid_bttz=:origenid),
+    (SELECT terminalid_erpco FROM intr.terminales WHERE stationid_bttz=:destinoid),
+    (SELECT usuarioid_erpco FROM intr.usuario WHERE accountid_bttz=:accountid)
+FROM DUAL]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+	destinoid: vars.datos.toId,
+	origenid: vars.datos.fromId,
+	accountid: vars.datos.accountId,
+	routeid: vars.datos.routeId
+}]]]></db:input-parameters>
+		</db:select>
+				<logger level="INFO" doc:name="Logger" doc:id="6b52b9db-a1b8-47fd-a462-0651ae9b5c90" message='#["[flow_Oracle] IDs equivalentes ERPCO obtenidos de las tablas INTR.ruta, INTR.terminales y INTR.usuario"]' />
+				<ee:transform doc:name="Limpiar IDs" doc:id="30de30ef-bb9f-4fa7-a95e-2b04833cdcd3">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="new_id"><![CDATA[%dw 2.0
+output application/json
+---
+{
+	ruta_id: if (vars.id_erpco[0]? != null) vars.id_erpco[0]."(SELECTRUTAID_ERPCOFROMINTR.RUTAWHEREROUTEID_BTTZ=:1)" else -1,
+	origen_id: if (vars.id_erpco[1]? != null) vars.id_erpco[0]."(SELECTTERMINALID_ERPCOFROMINTR.TERMINALESWHERESTATIONID_BTTZ=:2)" else -1,
+	destino_id: if (vars.id_erpco[2]? != null) vars.id_erpco[0]."(SELECTTERMINALID_ERPCOFROMINTR.TERMINALESWHERESTATIONID_BTTZ=:3)" else -1,
+	usuario_id: if (vars.id_erpco[3]? != null) vars.id_erpco[0]."(SELECTUSUARIOID_ERPCOFROMINTR.USUARIOWHEREACCOUNTID_BTTZ=:4)" else -1
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+				<logger level="INFO" doc:name="Logger" doc:id="8fea2ac7-a556-45b1-992f-2668d957555e" message='#["[flow_Oracle] Datos transformados correctamente"]' />
+				<ee:transform doc:name="Transformar Datos para Oracle" doc:id="4f65fc30-3764-49eb-865a-9d6086f525b0">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="datos_erpco"><![CDATA[%dw 2.0
+output application/json
+var numeoperacion = 1224 as Number
+var folio = random() * 100000000
+var asiento = random() * 100
+var num = random() * 100
+var num3 = random() * 100
+var num1 = random() * 10
+var num2 = random() * 10
+
+var fechorviaje = vars.datos.departureDatetime
+var fechorviaje1 =vars.datos.departureTimestamp
+
+var precio = vars.datos.displayTotal as Number
+var usuarioreg_id = vars.datos.createdBy[0 to 1]
+var statusboleto = vars.datos.status[0]
+var totaldevolver1 = vars.datos.redemptionValue 
+var valorformapago1 = vars.datos.total1 / 1000
+var formapago1_id = 1 as Number
+
+var valorformapago2 = vars.datos.total2 / 1000
+var formapago2_id = 2 as Number
+
+var valorformapago3 = vars.datos.total3 / 1000
+var formapago3_id = 3 as Number
+
+var numefolio1 = vars.datos.idMongo
+var kmdistance = vars.datos.travelDistance 
+var numeasiento = vars.datos.seat as String
+var nombPasajero = vars.datos.firstName as String
+var apePasajero = vars.datos.lastName as String
+var puntoventa = vars.datos.stationId[0 to 1] 
+---
+{
+	USUARIO_ID: vars.new_id.usuario_id, 
+	RUTA_ID: vars.new_id.ruta_id, 
+	ORIGEN_ID: vars.new_id.origen_id, 
+	DESTINO_ID: vars.new_id.destino_id,
+	
+	FECCORTE: vars.datos.value,
+	FECCORRIDA: vars.datos.travelDate,
+	FECHORVIAJE: fechorviaje,
+	FECHORVIAJE1: fechorviaje1,
+	FECHORVTA: vars.datos.updatedAt,
+	
+	NUMEFOLIO: round(folio) as String,
+	PRECIO: precio,
+	USUARIOREG_ID: usuarioreg_id as Number,
+	STATUSBOLETO: statusboleto,
+	TOTALDEVOLVER1: totaldevolver1,
+	VALORFORMAPAGO1: valorformapago1,
+	FORMPAGO1_ID: formapago1_id,
+	VALORFORMAPAGO2: valorformapago2,
+	FORMPAGO2_ID: formapago2_id,
+	VALORFORMAPAGO3: valorformapago3,
+	FORMPAGO3_ID: formapago3_id,
+	NUMEFOLIO1: vars.datos.ticketNumber,
+	KMDISTANCE: kmdistance,
+	NUMEASIENTO: round(asiento) as String,
+	NOMBPASAJERO: nombPasajero ++ " " ++ apePasajero,
+	TIPOBOLETO_ID: num2,
+	CLASESERVICIO_ID: num1,
+	PUNTOVENTA_ID: num as Number,
+	PUNTOVENTAREG_ID: num as Number,
+	NUMEOPERACION: numeoperacion,
+	VALORIVA: vars.datos.taxes,
+	MARCA_ID: num3,
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+				<logger level="INFO" doc:name="Logger" doc:id="1febc6a5-6d94-4d3a-b96f-dc1b16a224e2" message='#["[flow_Oracle] Datos listos para insertar"]' />
+				<db:update doc:name="Update" doc:id="0074bc98-3c40-40e4-8165-63133383befd" config-ref="Oracle_Database_Config">
+					<db:sql ><![CDATA[UPDATE VENTA.BOLVEN 
+SET 
+FECCORTE=:FECCORTE, FECCORRIDA=:FECCORRIDA,  FECHORVIAJE=:FECHORVIAJE, FECHORVTA=:FECHORVTA, 
+NUMEFOLIO=:NUMEFOLIO, PRECIO=:PRECIO, USUARIOREG_ID=:USUARIOREG_ID, STATUSBOLETO=:STATUSBOLETO, TOTALDEVOLVER1=:TOTALDEVOLVER1,
+VALORFORMAPAGO1=:VALORFORMAPAGO1, FORMAPAGO1_ID=:FORMAPAGO1_ID, VALORFORMAPAGO2=:VALORFORMAPAGO2, FORMAPAGO2_ID=:FORMAPAGO2_ID, VALORFORMAPAGO3=:VALORFORMAPAGO3,
+KMVIAJE=:KMVIAJE, NUMEASIENTO=:NUMEASIENTO, NOMBPASAJERO=:NOMBPASAJERO, TIPOBOLETO_ID=:TIPOBOLETO_ID, CLASESERVICIO_ID=:CLASESERVICIO_ID, 
+PUNTOVENTA_ID=:PUNTOVENTA_ID, PUNTOVENTAREG_ID=:PUNTOVENTAREG_ID, NUMEOPERACION=:NUMEOPERACION, VALORIVA=:VALORIVA, MARCA_ID=:MARCA_ID
+
+WHERE USUARIO_ID=:USUARIO_ID AND RUTA_ID=:RUTA_ID AND ORIGEN_ID=:ORIGEN_ID AND DESTINO_ID=:DESTINO_ID]]></db:sql>
+					<db:input-parameters ><![CDATA[#[{
+USUARIO_ID: vars.datos_erpco.USUARIO_ID,
+RUTA_ID: vars.datos_erpco.RUTA_ID, 
+ORIGEN_ID: vars.datos_erpco.ORIGEN_ID, 
+DESTINO_ID:vars.datos_erpco.DESTINO_ID,
+
+FECCORTE: vars.datos_erpco.FECCORTE,
+FECCORRIDA: vars.datos_erpco.FECCORRIDA,
+FECHORVIAJE: vars.datos_erpco.FECHORVIAJE, 
+FECHORVTA: vars.datos_erpco.FECHORVTA,	
+
+NUMEFOLIO: vars.datos_erpco.NUMEFOLIO, 
+PRECIO: vars.datos_erpco.PRECIO, 
+USUARIOREG_ID: vars.datos_erpco.USUARIOREG_ID, 
+STATUSBOLETO: vars.datos_erpco.STATUSBOLETO, 
+TOTALDEVOLVER1: vars.datos_erpco.TOTALDEVOLVER1,
+VALORFORMAPAGO1: vars.datos_erpco.VALORFORMAPAGO1, 
+FORMAPAGO1_ID: vars.datos_erpco.FORMPAGO1_ID,
+VALORFORMAPAGO2: vars.datos_erpco.VALORFORMAPAGO2, 
+FORMAPAGO2_ID: vars.datos_erpco.FORMPAGO2_ID, 
+VALORFORMAPAGO3: vars.datos_erpco.VALORFORMAPAGO3, 
+KMVIAJE: vars.datos_erpco.KMDISTANCE, 
+NUMEASIENTO: vars.datos_erpco.NUMEASIENTO,  
+NOMBPASAJERO: vars.datos_erpco.NOMBPASAJERO, 
+TIPOBOLETO_ID: vars.datos_erpco.TIPOBOLETO_ID, 
+CLASESERVICIO_ID: vars.datos_erpco.CLASESERVICIO_ID, 
+PUNTOVENTA_ID: vars.datos_erpco.PUNTOVENTA_ID, 
+PUNTOVENTAREG_ID: vars.datos_erpco.PUNTOVENTAREG_ID, 
+NUMEOPERACION: vars.datos_erpco.NUMEOPERACION, 
+VALORIVA: vars.datos_erpco.VALORIVA, 
+MARCA_ID: vars.datos_erpco.MARCA_ID
+}]]]></db:input-parameters>
+				</db:update>
+				<logger level="INFO" doc:name="Logger" doc:id="22844daf-ade8-421a-bcb9-4c95cfac49ac" message='#["[flow_Oracle] Actualización exitosa al registro con USUARIO_ID: " ++ vars.datos_erpco.USUARIO_ID]' />
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="2175934f-5327-459c-afb0-280107ffefc0" message='#["No se detectó el tipo de operacion"]'/>
+			</otherwise>
+			
+		</choice>
+		<logger level="INFO" doc:name="Logger" doc:id="1efaf1cb-cda3-41d2-a40a-97acb0c515a3" message='#["[flow_Oracle] Terminó el flujo exitosamente"]' />
+	
+
+</flow>
+<error-handler name="mongo-to-oracleError_Handler" doc:id="edfd706a-1029-48ea-b485-110f6315472b" >
+		<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="5a81296b-7863-4089-9182-27c2925e5939" type="ANY">
+			<logger level="INFO" doc:name="Logger" doc:id="0085a550-fc71-4f34-bda6-16f3c2677152" message='#["[flow_Oracle] Ocurrió un error"]'/>
+		</on-error-continue>
+	</error-handler>
+</mule>
